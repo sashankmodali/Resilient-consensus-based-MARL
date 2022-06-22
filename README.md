@@ -13,8 +13,8 @@ To train agents, execute main.py.
 We train five agents in a grid-world environment. Their original goal is to approach their desired position without colliding with other agents in the network.
 We design a grid world of dimension (5 x 5) and consider a reward function that penalizes the agents for distance from the target and colliding with other agents.
 
-<img src="https://github.com/sashankmodali/Resilient-consensus-actor-critic/blob/main/simulation_results/illustrations/cooperative_navigation.jpg" width="440" align="left">
-<img src="https://github.com/sashankmodali/Resilient-consensus-actor-critic/blob/main/simulation_results/illustrations/com_graph.jpg" width="300" >
+<img src="https://github.com/sashankmodali/grid-world-MARL/blob/main/simulation_results/illustrations/cooperative_navigation.jpg" width="440" align="left">
+<img src="https://github.com/sashankmodali/grid-world-MARL/blob/main/simulation_results/illustrations/com_graph.jpg" width="300" >
 
 ## References
 
