@@ -8,9 +8,10 @@ import tensorflow as tf
 from tensorflow import keras
 from tensorflow.keras import Input, Model, Sequential, layers
 from environments.grid_world import Grid_World
-from agents.resilient_CAC_agents import RPBCAC_agent
+from agents.resilient_CAC_agents import MARL_agent
 from agents.adversarial_CAC_agents import Faulty_CAC_agent, Greedy_CAC_agent, Malicious_CAC_agent
 import training.train_agents as training
+import ast
 
 '''
 Cooperative navigation problem with resilient consensus and adversarial actor-critic agents
@@ -24,8 +25,8 @@ if __name__ == '__main__':
     '''USER-DEFINED PARAMETERS'''
     parser = argparse.ArgumentParser(description='Provide parameters for training consensus AC agents')
     parser.add_argument('--n_agents',help='total number of agents',type=int,default=5)
-    parser.add_argument('--agent_label', help='classification of each agent (Cooperative,Malicious,Faulty,Greedy)',type=str, default=['Cooperative','Cooperative','Cooperative','Cooperative','Cooperative'])
-    parser.add_argument('--in_nodes',help='specify a list of neighbors that transmit values to each agent (include the index of the agent as the first element)',type=int,default=[[0,1,2,3],[1,2,3,4],[2,3,4,0],[3,4,0,1],[4,0,1,2]])
+    parser.add_argument('--agent_label', help='classification of each agent (Cooperative,Malicious,Faulty,Greedy)',type=str, default="['Cooperative','Cooperative','Cooperative','Cooperative','Cooperative']")
+    parser.add_argument('--in_nodes',help='specify a list of neighbors that transmit values to each agent (include the index of the agent as the first element)',type=str,default="[[0,1,2,3],[1,2,3,4],[2,3,4,0],[3,4,0,1],[4,0,1,2]]")
     parser.add_argument('--n_actions',help='size of action space of each agent',type=int,default=5)
     parser.add_argument('--n_states',help='state dimension of each agent',type=int,default=2)
     parser.add_argument('--n_episodes', help='Total number of episodes', type=int, default=7000)
@@ -49,6 +50,9 @@ if __name__ == '__main__':
     s_initial = np.random.randint(0,5,size=(args['n_agents'],args['n_states']))
 
     #----------------------------------------------------------------------------------------------------------------------------------------
+    args['agent_label'] = ast.literal_eval("".join(args['agent_label']))
+    args['in_nodes'] = ast.literal_eval("".join(args['in_nodes']))
+    assert(len(args['in_nodes']) == args['n_agents'])
     if args['pretrained_agents']:
         pretrained_weights = np.load('pretrained_weights.npy', allow_pickle=True)
         s_desired = np.load('desired_state.npy', allow_pickle=True)
@@ -101,7 +105,7 @@ if __name__ == '__main__':
 
         else: # args['agent_label'][node] == 'Cooperative': #create a cooperative agent
             print("This is an RPBCAC agent")
-            agents.append(RPBCAC_agent(actor,critic,team_reward,slow_lr = args['slow_lr'],fast_lr = args['fast_lr'],gamma = args['gamma'],H = args['H']))
+            agents.append(MARL_agent(actor,critic,team_reward,slow_lr = args['slow_lr'],fast_lr = args['fast_lr'],gamma = args['gamma'],H = args['H']))
 
     print(args,s_desired)
     #---------------------------------------------------------------------------------------------------------------------------------------------
