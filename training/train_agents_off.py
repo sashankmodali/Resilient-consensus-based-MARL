@@ -211,6 +211,7 @@ def train_MARL(env,agents,args,summary_writer,exp_buffer=None):
                     del rewards[:q]
                     del log_importance_samples[:q]
                     del joint_importance_samples[:q]
+                    del log_importance_samples[:q]
 
         #----------------------------------------------------------------------------
         #'                           TRAINING EPISODE SUMMARY                        '
