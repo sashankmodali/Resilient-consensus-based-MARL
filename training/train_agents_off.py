@@ -5,6 +5,7 @@ import tensorflow as tf
 from tensorflow import keras
 from tensorflow.keras import Input, Model, Sequential, layers
 import pandas as pd
+import copy
 
 tf.get_logger().setLevel('ERROR')
 
@@ -12,7 +13,7 @@ tf.get_logger().setLevel('ERROR')
 This file contains a function for training consensus AC agents in gym environments. It is designed for batch updates.
 '''
 
-def train_MARL(env,agents,args,exp_buffer=None):
+def train_MARL(env,agents,args,summary_writer,exp_buffer=None):
     '''
     FUNCTION train_MARL() - training a mixed cooperative and adversarial network of consensus AC agents including RPBCAC agents
     The agents apply actions sampled from the actor network and estimate online the team-average errors for the critic and team-average reward updates.
@@ -32,16 +33,28 @@ def train_MARL(env,agents,args,exp_buffer=None):
     in_nodes = args['in_nodes']
     max_ep_len, n_episodes, n_ep_fixed = args['max_ep_len'], args['n_episodes'], args['n_ep_fixed']
     n_epochs, batch_size, buffer_size = args['n_epochs'], args['batch_size'], args['buffer_size']
-
+    metropolis = []
+    for i in range(n_agents):
+        temp = np.zeros(len(in_nodes[i]))
+        temp_sum=0
+        for j in range(len(in_nodes[i])):
+            if in_nodes[i][j]!=i:
+                # print(in_nodes,j,i,temp)
+                temp[j] = 1/(1+max([len(in_nodes[i]),len(in_nodes[j])]))
+                temp_sum += temp[j]
+            else:
+                ident = j
+        temp[ident] = 1- temp_sum
+        metropolis.append(temp)
     if exp_buffer:
         states = exp_buffer[0]
         nstates = exp_buffer[1]
         actions = exp_buffer[2]
         rewards = exp_buffer[3]
     else:
-        states, nstates, actions, rewards = [], [], [], []
+        states, nstates, actions, rewards, log_importance_samples, joint_importance_samples = [], [], [], [], [], []
     #---------------------------------------------------------------------------
-    '                                 TRAINING                                 '
+    #'                                 TRAINING                                 '
     #---------------------------------------------------------------------------
     for t in range(n_episodes):
 
@@ -50,18 +63,18 @@ def train_MARL(env,agents,args,exp_buffer=None):
         action, actor_loss, critic_loss, TR_loss = np.zeros(n_agents), np.zeros(n_agents), np.zeros(n_agents), np.zeros(n_agents)
         i = t % n_ep_fixed
         #-----------------------------------------------------------------------
-        '                       BEGINNING OF EPISODE                           '
+        #'                       BEGINNING OF EPISODE                           '
         #-----------------------------------------------------------------------
         env.reset()
         state, _ = env.get_data()
         #-----------------------------------------------------------------------
-        '       Evaluate expected returns at the beginning of episode           '
+        #'       Evaluate expected returns at the beginning of episode           '
         #-----------------------------------------------------------------------
         for node in range(n_agents):
             if args['agent_label'][node] == 'Cooperative':
                 est_returns.append(agents[node].critic(state.reshape(1,state.shape[0],state.shape[1]))[0][0].numpy())
         #-----------------------------------------------------------------------
-        '                           Simulate episode                           '
+        #'                           Simulate episode                           '
         #-----------------------------------------------------------------------
         while j < max_ep_len:
             for node in range(n_agents):
@@ -71,26 +84,43 @@ def train_MARL(env,agents,args,exp_buffer=None):
             ep_returns += reward * (gamma ** j)
             j += 1
             #-----------------------------------------------------------------------
-            '                    Update experience replay buffers                  '
+            # '                    Update experience replay buffers                  '
             #-----------------------------------------------------------------------
             states.append(np.array(state))
             nstates.append(np.array(nstate))
             actions.append(np.array(action).reshape(-1,1))
             rewards.append(np.array(reward).reshape(-1,1))
+            if args['algo'] =="GenPBE" or args['algo'] == "saddle_point":
+                # print(agents[node].actor(state.reshape(1,state.shape[0],-1)))
+                log_importance_sample = np.array([np.log(agents[node].actor(state.reshape(1,state.shape[0],-1)).numpy().ravel()[int(action[node])]/agents[node].behavior_policy(state).numpy().ravel()[int(action[node])]) for node in range(args['n_agents'])]).reshape(-1,1)
+                log_importance_sample_copy = copy.deepcopy(log_importance_sample)
+                log_importance_sample_copy2 = copy.deepcopy(log_importance_sample)
+                log_importance_samples.append(log_importance_sample)
+                # print("\n\n\n=====================================v========================================")
+                # print(metropolis)
+                # print(log_importance_sample_copy2,log_importance_sample_copy[in_nodes[0]])
+                while np.linalg.norm(log_importance_sample_copy[0:-1] - log_importance_sample_copy[1:]) > 1e-2:
+                    for iters in range(len(log_importance_sample_copy2)):
+                        log_importance_sample_copy2[iters] = np.sum(metropolis[iters]*(log_importance_sample_copy[in_nodes[iters]]).flatten())
+                    log_importance_sample_copy = copy.deepcopy(log_importance_sample_copy2)
+                joint_importance_samples.append(np.exp(log_importance_sample_copy))
+                # print(log_importance_sample_copy2)
+                # print("=====================================^========================================\n\n\n")
             state = np.array(nstate)
             #------------------------------------------------------------------------
-            '                             END OF EPISODE                            '
+            #'                             END OF EPISODE                            '
             #------------------------------------------------------------------------
-            '                            ALGORITHM UPDATES                          '
+            #'                            ALGORITHM UPDATES                          '
             #------------------------------------------------------------------------
             if i == n_ep_fixed-1 and j == max_ep_len:
-
+                print("training===========================================================V")
                 # Convert experiences to tensors
                 s = tf.convert_to_tensor(states,tf.float32)
                 ns = tf.convert_to_tensor(nstates,tf.float32)
                 r = tf.convert_to_tensor(rewards,tf.float32)
                 a = tf.convert_to_tensor(actions,tf.float32)
                 sa = tf.concat([s,a],axis=-1)
+                rho = tf.convert_to_tensor(joint_importance_samples,tf.float32)
 
                 # Evaluate team-average reward of cooperative agents
                 r_coop = tf.zeros([r.shape[0],r.shape[2]],tf.float32)
@@ -98,15 +128,18 @@ def train_MARL(env,agents,args,exp_buffer=None):
                     r_coop += r[:,node] / n_coop
 
                 for n in range(n_epochs):
-                    critic_weights,TR_weights = [],[]
+                    critic_weights,TR_weights,bellman_weights, = [],[],[]
                     #--------------------------------------------------------------------
-                    '             I) LOCAL CRITIC AND TEAM-AVERAGE REWARD UPDATES       '
+                    #'             I) LOCAL CRITIC AND TEAM-AVERAGE REWARD UPDATES       '
                     #--------------------------------------------------------------------
                     for node in range(n_agents):
                         r_applied = r_coop if args['common_reward'] else r[:,node]
                         if args['agent_label'][node] == 'Cooperative':
                             x, TR_loss[node] = agents[node].TR_update_local(sa,r_applied)
-                            y, critic_loss[node] = agents[node].critic_update_local(s,ns,r_applied)
+                            if args['algo']=='GenPBE' or args['algo'] == "saddle_point":
+                                y, z, critic_loss[node] = agents[node].critic_update_local(s,ns,r_applied)
+                            else:
+                                y, critic_loss[node] = agents[node].critic_update_local(s,ns,r_applied)
                         elif args['agent_label'][node] == 'Greedy':
                             x, TR_loss[node] = agents[node].TR_update_local(sa,r[:,node])
                             y, critic_loss[node] = agents[node].critic_update_local(s,ns,r[:,node])
@@ -119,40 +152,55 @@ def train_MARL(env,agents,args,exp_buffer=None):
                             y = agents[node].get_critic_weights()
                         TR_weights.append(x)
                         critic_weights.append(y)
+                        if args['algo'] == "GenPBE" or args['algo'] == "saddle_point":
+                            bellman_weights.append(z)
+
                     #--------------------------------------------------------------------
-                    '                     II) RESILIENT CONSENSUS UPDATES               '
+                    #'                     II) RESILIENT CONSENSUS UPDATES               '
                     #--------------------------------------------------------------------
                     for node in (x for x in range(n_agents) if args['agent_label'][x] == 'Cooperative'):
                         #----------------------------------------------------------------
-                        '               a) RECEIVE PARAMETERS FROM NEIGHBORS            '
+                        # '               a) RECEIVE PARAMETERS FROM NEIGHBORS            '
                         #----------------------------------------------------------------
                         critic_weights_innodes = [critic_weights[i] for i in in_nodes[node]]
+                        bellman_weights_innodes = [critic_weights[i] for i in in_nodes[node]]
                         TR_weights_innodes = [TR_weights[i] for i in in_nodes[node]]
+                        if args['algo']== "GenPBE" or args['algo'] == "saddle_point":
+                            bellman_weights_innodes = [bellman_weights[i] for i in in_nodes[node]]
                         #----------------------------------------------------------------
-                        '               b) CONSENSUS UPDATES OF HIDDEN LAYERS           '
+                        # '               b) CONSENSUS UPDATES OF HIDDEN LAYERS           '
                         #----------------------------------------------------------------
                         agents[node].resilient_consensus_critic_hidden(critic_weights_innodes)
                         agents[node].resilient_consensus_TR_hidden(TR_weights_innodes)
+                        # if args['algo']== "GenPBE" or args['algo'] == "saddle_point":
+                        #     agents[node].resilient_consensus_bellman_hidden(bellman_weights_innodes)
                         #----------------------------------------------------------------
-                        '               c) CONSENSUS OVER UPDATED ESTIMATES             '
+                        # '               c) CONSENSUS OVER UPDATED ESTIMATES             '
                         #----------------------------------------------------------------
                         critic_agg = agents[node].resilient_consensus_critic(s,critic_weights_innodes)
                         TR_agg = agents[node].resilient_consensus_TR(sa,TR_weights_innodes)
+                        if args['algo']== "GenPBE" or args['algo'] == "saddle_point":
+                            bellman_agg = agents[node].resilient_consensus_bellman(s,bellman_weights_innodes)
                         #----------------------------------------------------------------
-                        '    d) STOCHASTIC UPDATES USING AGGREGATED ESTIMATION ERRORS   '
+                        # '    d) STOCHASTIC UPDATES USING AGGREGATED ESTIMATION ERRORS   '
                         #----------------------------------------------------------------
                         agents[node].critic_update_team(s,critic_agg)
                         agents[node].TR_update_team(sa,TR_agg)
+                        # if args['algo']== "GenPBE" or args['algo'] == "saddle_point":
+                            # agents[node].bellman_update_team(s,bellman_weights_innodes)
                 #--------------------------------------------------------------------
-                '                           III) ACTOR UPDATES                      '
+                #'                           III) ACTOR UPDATES                      '
                 #--------------------------------------------------------------------
                 for node in range(n_agents):
                     if args['agent_label'][node] == 'Cooperative':
-                        actor_loss[node] = agents[node].actor_update(s[-max_ep_len*n_ep_fixed:],ns[-max_ep_len*n_ep_fixed:],sa[-max_ep_len*n_ep_fixed:],a[-max_ep_len*n_ep_fixed:,node])
+                        if args['algo'] == "GenPBE" or args['algo'] == "saddle_point":
+                            actor_loss[node] = agents[node].actor_update(s[-max_ep_len*n_ep_fixed:],ns[-max_ep_len*n_ep_fixed:],sa[-max_ep_len*n_ep_fixed:],a[-max_ep_len*n_ep_fixed:,node],rho[-max_ep_len*n_ep_fixed:,node])
+                        else:
+                            actor_loss[node] = agents[node].actor_update(s[-max_ep_len*n_ep_fixed:],ns[-max_ep_len*n_ep_fixed:],sa[-max_ep_len*n_ep_fixed:],a[-max_ep_len*n_ep_fixed:,node])
                     else:
                         actor_loss[node] = agents[node].actor_update(s[-max_ep_len*n_ep_fixed:],ns[-max_ep_len*n_ep_fixed:],r[-max_ep_len*n_ep_fixed:,node],a[-max_ep_len*n_ep_fixed:,node])
                 #--------------------------------------------------------------------
-                '                   IV) EXPERIENCE REPLAY BUFFER UPDATES             '
+                #'                   IV) EXPERIENCE REPLAY BUFFER UPDATES             '
                 #--------------------------------------------------------------------
 
                 if len(states) > buffer_size:
@@ -161,9 +209,11 @@ def train_MARL(env,agents,args,exp_buffer=None):
                     del nstates[:q]
                     del actions[:q]
                     del rewards[:q]
+                    del log_importance_samples[:q]
+                    del joint_importance_samples[:q]
 
         #----------------------------------------------------------------------------
-        '                           TRAINING EPISODE SUMMARY                        '
+        #'                           TRAINING EPISODE SUMMARY                        '
         #----------------------------------------------------------------------------
         for node in range(n_agents):
             if args['agent_label'][node] == 'Cooperative':
@@ -178,6 +228,21 @@ def train_MARL(env,agents,args,exp_buffer=None):
                 "Estimated_team_returns":np.mean(est_returns)
                }
         paths.append(path)
+        with summary_writer.as_default():
+            tf.summary.scalar('mean_true_returns_', mean_true_returns, step=t)
+            for iters in range(len(est_returns)):
+                tf.summary.scalar('est_returns_' + str(iters), est_returns[iters], step=t)
+                tf.summary.scalar('critic_loss_'+ str(iters), critic_loss[iters], step=t)
+                tf.summary.scalar('TR_loss_'+ str(iters), TR_loss[iters], step=t)
+                tf.summary.scalar('actor_loss_'+ str(iters), actor_loss[iters], step=t)
+                tf.summary.scalar('rho_local_'+ str(iters), log_importance_sample_copy.flatten()[iters], step=t)
+                if i == n_ep_fixed-1 and j == max_ep_len:
+                    tf.summary.scalar('critic_agg_'+ str(iters), critic_agg.numpy().flatten()[iters], step=t)
+                    tf.summary.scalar('bellman_agg_'+ str(iters), bellman_agg.numpy().flatten()[iters], step=t)
+            # tf.summary.scalar('loss', test_loss.result(), step=t)
+            # tf.summary.scalar('loss', test_loss.result(), step=t)
+            # tf.summary.scalar('loss', test_loss.result(), step=t)
+            # tf.summary.scalar('accuracy', test_accuracy.result(), step=t)
 
     sim_data = pd.DataFrame.from_dict(paths)
     weights = [agent.get_parameters() for agent in agents]

@@ -1,0 +1,15 @@
+# saved model and results
+simulation_results/**
+*.h5
+*.png
+
+# cache
+**/*__pycache__*/**
+
+# sim data
+*.npy
+*.pkl
+
+# Other files
+.ipynb_checkpoints/**
+*.ipynb
