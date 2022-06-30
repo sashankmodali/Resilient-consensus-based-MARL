@@ -1,8 +1,8 @@
 # saved model and results
 simulation_results/**
-!simulation_results/figures/**
 *.h5
 *.png
+!simulation_results/illustrations/**
 
 
 # cache
