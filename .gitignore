@@ -1,7 +1,7 @@
 # saved model and results
-simulation_results/**
 *.h5
 *.png
+simulation_results/**
 !simulation_results/illustrations/**
 
 
