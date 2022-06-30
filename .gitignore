@@ -2,6 +2,7 @@
 simulation_results/**
 *.h5
 *.png
+!simulation_results/*/*.png
 
 # cache
 **/*__pycache__*/**
