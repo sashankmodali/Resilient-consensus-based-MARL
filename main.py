@@ -18,7 +18,7 @@ from agents.resilient_off_policy_agents_saddle_point import resilient_agent as o
 from agents.adversarial_agents import Faulty_agent, Greedy_agent, Malicious_agent
 import training.train_agents_off as training
 import ast
-from keras.utils import plot_model
+from tensorflow.keras.utils import plot_model
 
 '''
 Cooperative navigation problem with resilient consensus and adversarial actor-critic agents
