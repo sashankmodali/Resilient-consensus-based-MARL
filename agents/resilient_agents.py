@@ -1,6 +1,20 @@
 import numpy as np
 import tensorflow as tf
 from tensorflow import keras
+#----Memory Issues-------------------------------------------
+import gc
+import tracemalloc
+from tensorflow.keras import backend as k
+from tensorflow.keras.callbacks import Callback
+
+
+
+class ClearMemory(Callback):
+    def on_epoch_end(self, epoch, logs=None):
+        gc.collect()
+        k.clear_session()
+
+#------------------------------------------------------------
 
 class resilient_agent():
     '''
@@ -35,7 +49,7 @@ class resilient_agent():
         self.fast_lr = fast_lr
         self.optimizer_fast = keras.optimizers.SGD(learning_rate=fast_lr)
         self.mse = keras.losses.MeanSquaredError()
-        self.actor.compile(optimizer=keras.optimizers.Adam(learning_rate=slow_lr),loss=keras.losses.SparseCategoricalCrossentropy())
+        self.actor.compile(optimizer=keras.optimizers.Adam(learning_rate=slow_lr),loss=keras.losses.SparseCategoricalCrossentropy(),run_eagerly=True)
         self.critic_features = keras.Model(self.critic.inputs,self.critic.layers[-2].output)
         self.TR_features = keras.Model(self.TR.inputs,self.TR.layers[-2].output)
 
@@ -67,7 +81,7 @@ class resilient_agent():
         phi_norm = tf.math.reduce_sum(tf.math.square(phi),axis=1) + 1
         weights = 1 / (2 * self.fast_lr * phi_norm)
         self.critic_features.trainable = False
-        self.critic.compile(optimizer=self.optimizer_fast,loss=self.mse)
+        self.critic.compile(optimizer=self.optimizer_fast,loss=self.mse,run_eagerly=True)
         self.critic.train_on_batch(s,critic_agg,sample_weight=weights)
 
     def TR_update_team(self,sa,TR_agg):
@@ -80,7 +94,7 @@ class resilient_agent():
         f_norm = tf.math.reduce_sum(tf.math.square(f),axis=1).numpy() + 1
         weights = 1 / (2 * self.fast_lr * f_norm)
         self.TR_features.trainable = False
-        self.TR.compile(optimizer=self.optimizer_fast,loss=self.mse)
+        self.TR.compile(optimizer=self.optimizer_fast,loss=self.mse,run_eagerly=True)
         self.TR.train_on_batch(sa,TR_agg,sample_weight=weights)
 
     def actor_update(self,s,ns,sa,a_local,pretrain=False):
@@ -114,8 +128,8 @@ class resilient_agent():
         nV = self.critic(ns)
         local_TD_target = r_local + self.gamma * nV
         self.critic_features.trainable = True
-        self.critic.compile(optimizer=self.optimizer_fast,loss=self.mse)
-        training_hist = self.critic.fit(s,local_TD_target,batch_size=s.shape[0],epochs=5,verbose=0)
+        self.critic.compile(optimizer=self.optimizer_fast,loss=self.mse,run_eagerly=True)
+        training_hist = self.critic.fit(s,local_TD_target,batch_size=s.shape[0],epochs=5,verbose=0,callbacks=ClearMemory())
         critic_weights = self.critic.get_weights()
         self.critic.set_weights(critic_weights_temp)
 
@@ -132,8 +146,8 @@ class resilient_agent():
         '''
         TR_weights_temp = self.TR.get_weights()
         self.TR_features.trainable = True
-        self.TR.compile(optimizer=self.optimizer_fast,loss=self.mse)
-        training_hist = self.TR.fit(sa,r_local,batch_size=sa.shape[0],epochs=5,verbose=0)
+        self.TR.compile(optimizer=self.optimizer_fast,loss=self.mse,run_eagerly=True)
+        training_hist = self.TR.fit(sa,r_local,batch_size=sa.shape[0],epochs=5,verbose=0,callbacks=ClearMemory())
         TR_weights = self.TR.get_weights()
         self.TR.set_weights(TR_weights_temp)
 

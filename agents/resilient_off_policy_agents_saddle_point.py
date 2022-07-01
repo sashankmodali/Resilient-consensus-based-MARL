@@ -48,8 +48,9 @@ class resilient_agent():
         self.H = H
         self.n_actions = self.actor.output_shape[1]
         self.fast_lr = fast_lr
-        self.optimizer_fast = keras.optimizers.SGD(learning_rate=fast_lr,clipnorm=1.0,clipvalue=0.5)
-        self.optimizer_bellman = keras.optimizers.SGD(learning_rate=2*fast_lr,clipnorm=1.0,clipvalue=0.5)
+        self.optimizer_fast = keras.optimizers.SGD(learning_rate=2*fast_lr,clipnorm=1.0,clipvalue=0.5)
+        self.optimizer_bellman = keras.optimizers.SGD(learning_rate=fast_lr,clipnorm=1.0,clipvalue=0.5)
+        self.optimizer_critic = keras.optimizers.SGD(learning_rate=0.75*fast_lr,clipnorm=1.0,clipvalue=0.5)
         self.optimizer_slow = keras.optimizers.SGD(learning_rate=slow_lr,clipnorm=1.0,clipvalue=0.5)
         self.mse = keras.losses.MeanSquaredError()
         self.actor.compile(optimizer=keras.optimizers.Adam(learning_rate=slow_lr,clipnorm=1.0,clipvalue=0.5),loss=keras.losses.SparseCategoricalCrossentropy(),run_eagerly=True)
@@ -97,7 +98,7 @@ class resilient_agent():
         phi_norm = tf.math.reduce_sum(tf.math.square(phi),axis=1) + 1
         weights = 1 / (2 * self.fast_lr * phi_norm)
         self.critic_features.trainable = False
-        self.critic.compile(optimizer=self.optimizer_fast,loss=self.mse,run_eagerly=True)
+        self.critic.compile(optimizer=self.optimizer_critic,loss=self.mse,run_eagerly=True)
         self.critic.train_on_batch(s,critic_agg,sample_weight=weights)
 
     def TR_update_team(self,sa,TR_agg):
@@ -184,7 +185,7 @@ class resilient_agent():
             grads1 = tape1.gradient(bellman_loss, self.critic.trainable_variables)
             grads2 = tape2.gradient(bellman_loss2, self.bellman.layers[-1].trainable_variables)
 
-            self.optimizer_fast.apply_gradients(zip(grads1, self.critic.trainable_variables))
+            self.optimizer_critic.apply_gradients(zip(grads1, self.critic.trainable_variables))
             self.optimizer_bellman.apply_gradients(zip(grads2, self.bellman.layers[-1].trainable_variables))
 
             # training_hist = self.critic.fit(s,local_TD_target,batch_size=s.shape[0],epochs=5,verbose=0)

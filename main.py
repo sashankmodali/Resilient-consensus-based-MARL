@@ -68,8 +68,8 @@ def main():
         s_desired = np.load('desired_state.npy', allow_pickle=True)
 
     current_time = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
-    train_log_dir = args['summary_dir']+'/logs/gradient_tape/' + current_time + '/train'
-    test_log_dir =  args['summary_dir']+'/logs/gradient_tape/' + current_time + '/test'
+    train_log_dir = args['summary_dir'] + '/tensorboard/' + args['algo'] +'/logs/gradient_tape/' + current_time + '/train'
+    test_log_dir =  args['summary_dir'] + '/tensorboard/' + args['algo'] +'/logs/gradient_tape/' + current_time + '/test'
     train_summary_writer = tf.summary.create_file_writer(train_log_dir)
     test_summary_writer = tf.summary.create_file_writer(test_log_dir)
 

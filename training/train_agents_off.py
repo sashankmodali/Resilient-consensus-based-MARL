@@ -257,10 +257,12 @@ def train_MARL(env,agents,args,summary_writer,exp_buffer=None):
                 tf.summary.scalar('critic_loss_'+ str(iters), critic_loss[iters], step=t)
                 tf.summary.scalar('TR_loss_'+ str(iters), TR_loss[iters], step=t)
                 tf.summary.scalar('actor_loss_'+ str(iters), actor_loss[iters], step=t)
-                tf.summary.scalar('rho_local_'+ str(iters), log_importance_sample_copy.flatten()[iters], step=t)
-                if i == n_ep_fixed-1 and j == max_ep_len:
-                    tf.summary.scalar('critic_agg_'+ str(iters), critic_agg.numpy().flatten()[iters], step=t)
-                    tf.summary.scalar('bellman_agg_'+ str(iters), bellman_agg.numpy().flatten()[iters], step=t)
+                tf.summary.scalar('ep_returns_'+ str(iters), ep_returns[iters], step=t)
+                if args['algo'] == "GenPBE" or args['algo'] == "saddle_point":
+                    tf.summary.scalar('rho_local_'+ str(iters), log_importance_sample_copy.flatten()[iters], step=t)
+                    if i == n_ep_fixed-1 and j == max_ep_len:
+                        tf.summary.scalar('critic_agg_'+ str(iters), critic_agg.numpy().flatten()[iters], step=t)
+                        tf.summary.scalar('bellman_agg_'+ str(iters), bellman_agg.numpy().flatten()[iters], step=t)
         # snapshot = tracemalloc.take_snapshot()
         # top_stats = snapshot.statistics("lineno")
         # with open("memory_profiler.txt", "a+") as file:
