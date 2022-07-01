@@ -7,6 +7,23 @@ from tensorflow.keras import Input, Model, Sequential, layers
 import pandas as pd
 import copy
 
+#----Memory Issues-------------------------------------------
+import gc
+import tracemalloc
+from tensorflow.keras import backend as k
+from tensorflow.keras.callbacks import Callback
+
+
+
+class ClearMemory(Callback):
+    def on_epoch_end(self, epoch, logs=None):
+        gc.collect()
+        k.clear_session()
+
+#------------------------------------------------------------
+
+
+
 tf.get_logger().setLevel('ERROR')
 
 '''
@@ -26,6 +43,10 @@ def train_MARL(env,agents,args,summary_writer,exp_buffer=None):
                list of resilient consensus AC agents
                user-defined parameters for the simulation
     '''
+    tracemalloc.start()
+    with open("memory_profiler.txt", "w") as file:
+            file.write("\n")
+
     paths = []
     n_agents, n_states = env.n_agents, args['n_states']
     n_coop = args['agent_label'].count('Cooperative')
@@ -211,7 +232,7 @@ def train_MARL(env,agents,args,summary_writer,exp_buffer=None):
                     del rewards[:q]
                     del log_importance_samples[:q]
                     del joint_importance_samples[:q]
-                    del log_importance_samples[:q]
+                    gc.collect()
 
         #----------------------------------------------------------------------------
         #'                           TRAINING EPISODE SUMMARY                        '
@@ -240,6 +261,13 @@ def train_MARL(env,agents,args,summary_writer,exp_buffer=None):
                 if i == n_ep_fixed-1 and j == max_ep_len:
                     tf.summary.scalar('critic_agg_'+ str(iters), critic_agg.numpy().flatten()[iters], step=t)
                     tf.summary.scalar('bellman_agg_'+ str(iters), bellman_agg.numpy().flatten()[iters], step=t)
+        # snapshot = tracemalloc.take_snapshot()
+        # top_stats = snapshot.statistics("lineno")
+        # with open("memory_profiler.txt", "a+") as file:
+        #     file.write("-------------------------------------------\n")
+        #     [file.write(str(stat) + "\n") for stat in top_stats[0:3]]
+        #     file.write("\n")
+
             # tf.summary.scalar('loss', test_loss.result(), step=t)
             # tf.summary.scalar('loss', test_loss.result(), step=t)
             # tf.summary.scalar('loss', test_loss.result(), step=t)

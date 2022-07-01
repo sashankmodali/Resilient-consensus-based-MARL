@@ -1,6 +1,20 @@
 import numpy as np
 import tensorflow as tf
 from tensorflow import keras
+#----Memory Issues-------------------------------------------
+import gc
+import tracemalloc
+from tensorflow.keras import backend as k
+from tensorflow.keras.callbacks import Callback
+
+
+
+class ClearMemory(Callback):
+    def on_epoch_end(self, epoch, logs=None):
+        gc.collect()
+        k.clear_session()
+
+#------------------------------------------------------------
 
 class resilient_agent():
     '''
@@ -38,7 +52,7 @@ class resilient_agent():
         self.optimizer_bellman = keras.optimizers.SGD(learning_rate=2*fast_lr,clipnorm=1.0,clipvalue=0.5)
         self.optimizer_slow = keras.optimizers.SGD(learning_rate=slow_lr,clipnorm=1.0,clipvalue=0.5)
         self.mse = keras.losses.MeanSquaredError()
-        self.actor.compile(optimizer=keras.optimizers.Adam(learning_rate=slow_lr,clipnorm=1.0,clipvalue=0.5),loss=keras.losses.SparseCategoricalCrossentropy())
+        self.actor.compile(optimizer=keras.optimizers.Adam(learning_rate=slow_lr,clipnorm=1.0,clipvalue=0.5),loss=keras.losses.SparseCategoricalCrossentropy(),run_eagerly=True)
         # print(self.critic.inputs,self.critic.layers[-2].outputs)
         self.critic_features = keras.Sequential([
                                     *self.critic.layers[:-1]
@@ -83,7 +97,7 @@ class resilient_agent():
         phi_norm = tf.math.reduce_sum(tf.math.square(phi),axis=1) + 1
         weights = 1 / (2 * self.fast_lr * phi_norm)
         self.critic_features.trainable = False
-        self.critic.compile(optimizer=self.optimizer_fast,loss=self.mse)
+        self.critic.compile(optimizer=self.optimizer_fast,loss=self.mse,run_eagerly=True)
         self.critic.train_on_batch(s,critic_agg,sample_weight=weights)
 
     def TR_update_team(self,sa,TR_agg):
@@ -96,7 +110,7 @@ class resilient_agent():
         f_norm = tf.math.reduce_sum(tf.math.square(f),axis=1).numpy() + 1
         weights = 1 / (2 * self.fast_lr * f_norm)
         self.TR_features.trainable = False
-        self.TR.compile(optimizer=self.optimizer_fast,loss=self.mse)
+        self.TR.compile(optimizer=self.optimizer_fast,loss=self.mse,run_eagerly=True)
         self.TR.train_on_batch(sa,TR_agg,sample_weight=weights)
 
     # def bellman_update_team(self,s,bellman_agg):
@@ -173,7 +187,7 @@ class resilient_agent():
             self.optimizer_fast.apply_gradients(zip(grads1, self.critic.trainable_variables))
             self.optimizer_bellman.apply_gradients(zip(grads2, self.bellman.layers[-1].trainable_variables))
 
-            # training_hist = self.critic.fit(s,local_TD_target,batch_size=s.shape[0],epochs=5,verbose=0)
+            # training_hist = self.critic.fit(s,local_TD_target,batch_size=s.shape[0],epochs=5,verbose=0,callbacks=ClearMemory())
             critic_weights = self.critic.get_weights()
             bellman_weights = self.bellman.layers[-1].get_weights()
             self.critic.set_weights(critic_weights_temp)
@@ -193,8 +207,8 @@ class resilient_agent():
         '''
         TR_weights_temp = self.TR.get_weights()
         self.TR_features.trainable = True
-        self.TR.compile(optimizer=self.optimizer_fast,loss=self.mse)
-        training_hist = self.TR.fit(sa,r_local,batch_size=sa.shape[0],epochs=5,verbose=0)
+        self.TR.compile(optimizer=self.optimizer_fast,loss=self.mse,run_eagerly=True)
+        training_hist = self.TR.fit(sa,r_local,batch_size=sa.shape[0],epochs=5,verbose=0,callbacks=ClearMemory())
         TR_weights = self.TR.get_weights()
         self.TR.set_weights(TR_weights_temp)
 
