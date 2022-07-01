@@ -43,9 +43,9 @@ def train_MARL(env,agents,args,summary_writer,exp_buffer=None):
                list of resilient consensus AC agents
                user-defined parameters for the simulation
     '''
-    tracemalloc.start()
-    with open("memory_profiler.txt", "w") as file:
-            file.write("\n")
+    # tracemalloc.start()
+    # with open("memory_profiler.txt", "w") as file:
+    #         file.write("\n")
 
     paths = []
     n_agents, n_states = env.n_agents, args['n_states']
