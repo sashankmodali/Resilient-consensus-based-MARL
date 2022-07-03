@@ -55,7 +55,7 @@ class Grid_World(gym.Env):
         '''Resets the environment'''
         if self.randomize_state:
             state = np.zeros((5,2))
-            while len(np.unique(state,axis=0)) != len(arr):
+            while len(np.unique(state,axis=0)) != len(state):
                 state = np.random.randint([self.nrow,self.ncol],size=(self.n_agents,self.n_states))
             self.state = state
         else:
