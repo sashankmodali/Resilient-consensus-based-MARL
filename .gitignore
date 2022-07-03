@@ -1,15 +1,16 @@
 # saved model and results
 *.h5
 *.png
-simulation_results/**
-!simulation_results/illustrations/**
-
+simulation_results/tensorboard/**
+simulation_results/figures/**
+simulation_results/raw_data/**
+**/logs/**
 
 # cache
 **/*__pycache__*/**
 
 # sim data
-*.npy
+# *.npy
 *.pkl
 
 # Other files
