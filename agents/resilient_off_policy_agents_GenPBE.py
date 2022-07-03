@@ -126,7 +126,7 @@ class resilient_agent():
 
         # print("\n\n\n +++++++++++ {},{},{},{} ++++++++++++ \n\n\n".format(phi.shape,phi_norm.shape,bellman_agg,s.shape))
         self.critic_features.trainable = False
-        self.bellman.compile(optimizer=self.optimizer_bellman,loss=self.mse)
+        self.bellman.compile(optimizer=self.optimizer_bellman,loss=self.mse,run_eagerly=True)
         self.bellman.train_on_batch(s,bellman_agg,sample_weight=weights)
 
 

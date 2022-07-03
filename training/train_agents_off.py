@@ -326,6 +326,7 @@ def train_MARL(env,agents,args,summary_writer,exp_buffer=None):
                         # tf.summary.scalar('mean_true__on_policy_returns_adv_', mean_true_on_policy_returns_adv_, step=t)
                         for iters in range(len(est_returns)):
                             tf.summary.scalar('est_returns_' + str(iters), est_returns[iters], step=t)
+                            tf.summary.scalar('ep_returns_' + str(iters), ep_returns[iters], step=t)
 
 
     sim_data = pd.DataFrame.from_dict(paths)

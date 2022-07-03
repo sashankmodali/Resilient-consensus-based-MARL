@@ -124,7 +124,7 @@ class resilient_agent():
         phi_norm = tf.math.reduce_sum(tf.math.square(phi),axis=1) + 1
         weights = 1 / (2 * self.fast_lr * phi_norm)
         self.critic_features.trainable = False
-        self.bellman.compile(optimizer=self.optimizer_bellman,loss=self.mse)
+        self.bellman.compile(optimizer=self.optimizer_bellman,loss=self.mse,run_eagerly=True)
         self.bellman.train_on_batch(s,bellman_agg,sample_weight=weights)
 
 
