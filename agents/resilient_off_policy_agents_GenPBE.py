@@ -48,7 +48,7 @@ class resilient_agent():
         self.H = H
         self.n_actions = self.actor.output_shape[1]
         self.fast_lr = fast_lr
-        self.optimizer_fast = keras.optimizers.SGD(learning_rate=2*fast_lr,clipnorm=1.0,clipvalue=0.5)
+        self.optimizer_fast = keras.optimizers.SGD(learning_rate=2*fast_lr)
         self.optimizer_bellman = keras.optimizers.SGD(learning_rate=fast_lr,clipnorm=1.0,clipvalue=0.5)
         self.optimizer_critic = keras.optimizers.SGD(learning_rate=0.75*fast_lr,clipnorm=1.0,clipvalue=0.5)
         self.optimizer_slow = keras.optimizers.SGD(learning_rate=slow_lr,clipnorm=1.0,clipvalue=0.5)
@@ -111,21 +111,23 @@ class resilient_agent():
         f_norm = tf.math.reduce_sum(tf.math.square(f),axis=1).numpy() + 1
         weights = 1 / (2 * self.fast_lr * f_norm)
         self.TR_features.trainable = False
-        self.TR.compile(optimizer=self.optimizer_critic,loss=self.mse,run_eagerly=True)
+        self.TR.compile(optimizer=self.optimizer_fast,loss=self.mse,run_eagerly=True)
         self.TR.train_on_batch(sa,TR_agg,sample_weight=weights)
 
-    # def bellman_update_team(self,s,bellman_agg):
-    #     '''
-    #     Stochastic update of the critic using the estimated average TD error of the neighbors
-    #     ARGUMENTS: visited consecutive states, aggregated neighbors' TD errors
-    #     RETURNS: training loss
-    #     '''
-    #     phi = self.bellman_features(s)
-    #     phi_norm = tf.math.reduce_sum(tf.math.square(phi),axis=1) + 1
-    #     weights = 1 / (2 * self.fast_lr * phi_norm)
-    #     self.critic_features.trainable = False
-    #     self.critic.compile(optimizer=self.optimizer_fast,loss=self.mse)
-    #     self.critic.train_on_batch(s,critic_agg,sample_weight=weights)
+    def bellman_update_team(self,s,bellman_agg):
+        '''
+        Stochastic update of the critic using the estimated average TD error of the neighbors
+        ARGUMENTS: visited consecutive states, aggregated neighbors' TD errors
+        RETURNS: training loss
+        '''
+        phi = self.critic_features(s)
+        phi_norm = tf.math.reduce_sum(tf.math.square(phi),axis=1) + 1
+        weights = 1 / (2 * self.fast_lr * phi_norm)
+
+        # print("\n\n\n +++++++++++ {},{},{},{} ++++++++++++ \n\n\n".format(phi.shape,phi_norm.shape,bellman_agg,s.shape))
+        self.critic_features.trainable = False
+        self.bellman.compile(optimizer=self.optimizer_bellman,loss=self.mse)
+        self.bellman.train_on_batch(s,bellman_agg,sample_weight=weights)
 
 
     def actor_update(self,s,ns,sa,a_local,rho_local,pretrain=False):
@@ -169,6 +171,7 @@ class resilient_agent():
         '''
         critic_weights_temp = self.critic.get_weights()
         bellman_weights_temp = self.bellman.layers[-1].get_weights()
+
         with tf.GradientTape() as tape1, tf.GradientTape() as tape2:
             
             nV = self.critic(ns)
@@ -185,8 +188,10 @@ class resilient_agent():
             grads1 = tape1.gradient(bellman_loss, self.critic.trainable_variables)
             grads2 = tape2.gradient(bellman_loss2, self.bellman.layers[-1].trainable_variables)
 
-            self.optimizer_critic.apply_gradients(zip(grads1, self.critic.trainable_variables))
-            self.optimizer_bellman.apply_gradients(zip(grads2, self.bellman.layers[-1].trainable_variables))
+            for epoch in range(5):
+
+                self.optimizer_critic.apply_gradients(zip(grads1, self.critic.trainable_variables))
+                self.optimizer_bellman.apply_gradients(zip(grads2, self.bellman.layers[-1].trainable_variables))
 
             # training_hist = self.critic.fit(s,local_TD_target,batch_size=s.shape[0],epochs=5,verbose=0,callbacks=ClearMemory())
             critic_weights = self.critic.get_weights()
@@ -260,6 +265,7 @@ class resilient_agent():
         critics = tf.convert_to_tensor(critics)
         critic_agg = self._resilient_aggregation(critics)
         self.critic.layers[-1].set_weights(critic_weights_temp)
+        # print("\n\n\n ++++000000+++++++ {} +++++000000+++++++ \n\n\n".format(critic_agg))
 
         return critic_agg
 
@@ -280,6 +286,7 @@ class resilient_agent():
         bellmans = tf.convert_to_tensor(bellmans)
         bellman_agg = self._resilient_aggregation(bellmans)
         self.bellman.layers[-1].set_weights(bellman_weights_temp)
+        # print("\n\n\n ++++000000+++++++ {} +++++000000+++++++ \n\n\n".format(bellman_agg))
 
         return bellman_agg
 
@@ -318,6 +325,21 @@ class resilient_agent():
 
         return self.action
 
+    def get_on_policy_action(self,state,mu=0.0):
+        '''Choose an action at the current state according to behaviour policy
+            - set from_policy to True to sample from the actor
+            - set from_policy to False to sample from the random uniform distribution over actions
+            - set mu to [0,1] to control probability of choosing a random action
+        '''
+        random_action = np.random.choice(self.n_actions)
+        action_prob = self.actor.predict(state).ravel()
+        # action_prob = self.behavior_policy(state).numpy().ravel()
+        # print(self.n_actions,action_prob)
+        action_from_policy = np.random.choice(self.n_actions, p = action_prob)
+        self.action = np.random.choice([action_from_policy,random_action], p = [1-mu,mu])
+
+        return self.action
+
     def get_parameters(self):
 
-        return [self.actor.get_weights(), self.critic.get_weights(), self.TR.get_weights(), self.bellman.weights]
+        return [self.actor.get_weights(), self.critic.get_weights(), self.TR.get_weights(), self.bellman.get_weights()]
